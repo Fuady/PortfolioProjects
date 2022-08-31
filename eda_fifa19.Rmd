@@ -1,0 +1,422 @@
+---
+title: "EDA-fifa19"
+author: "A.M.Fuady"
+date: "2019 M12 13"
+output: html_document
+---
+
+Exploratory data analysis: Premiere league in FIFA20
+
+This post will explore data of players and clubs in the premier league season 2019/2020 from FIFA20 video games. Data has been scraped from the publicly available [website](https://sofifa.com). You may download the available data [here](https://www.kaggle.com/stefanoleone992/fifa-20-complete-player-dataset) which contains the player's career mode data from FIFA15 to FIFA20. For this post, we focus on the FIFA20 data.
+
+The first thing to do is loading some R packages needed as follows
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr) 
+library(ggplot2)
+library(magrittr) 
+library(stringr) 
+library(gridExtra) 
+library(reshape)
+library(ggcorrplot)
+```
+
+## Loading dataset: career mode players data in FIFA20
+```{r}
+fifa <- read.csv("C:/Users/amfua/Documents/RepositoryBlog/data/players_20.csv")
+fifa <- fifa[-1]
+
+str(fifa)
+```
+
+This dataset consists of complete information for each player such as name, club, nationality, body measurement, overall skills, specific skills, player position, market value, etc. Here, we only focus on the premier league club season 2019/2020. We subset the dataset by selecting the only club within the premier league this season.  
+
+# Selecting Premier league club 2019/2020
+```{r}
+PremierL <- c("Arsenal","Aston Villa", "Bournemouth", "Brighton & Hove Albion", "Burnley", "Chelsea", "Crystal Palace", "Everton", "Leicester City", "Liverpool", 
+              "Manchester City", "Manchester United", "Newcastle United", "Norwich City", "Sheffield United", "Southampton", "Tottenham Hotspur", "Watford", "West Ham United", "Wolverhampton Wanderers")
+
+pl <- fifa  %>% filter(club %in% PremierL)
+```
+
+The `pl` data frame contains all information of players in the premier league. In the following code, we define a new variable called `Pref.Pos` to refer a preferred position for each player. Some players have multiple positions, but we only select the first player position available. 
+
+```{r}
+pl  %<>% mutate(Pref.Pos = unlist(lapply(strsplit(x = as.character(pl$player_positions),split = ","), '[[',1 ) ))
+```
+
+Next, we grouped player position into four different classes, namely `Goal Keeper`, `Defence`, `Midfielder` and `Forward`. Then, we assign that information into new variables.
+
+```{r}
+pl  %<>% mutate(Goal_Keeper = if_else(Pref.Pos %in% "GK",1,0),
+                Defence = if_else(Pref.Pos %in% c("CB", "RB", "LB", "LWB", "RWB"), 1, 0),
+                Midfielder = if_else(Pref.Pos %in% c("CM", "CDM","CAM","LM","RM"), 1, 0),
+                Forward = if_else(Pref.Pos %in% c("ST", "CF", "LW","RW"), 1, 0)) 
+names(pl)
+```
+
+## Exploratory data: Club
+The first exploration is on the club level. We want to know how many players are in each club, how much the total value of each club, the average age of player within a club, the average potential and overall skills of the player within a club. 
+
+The number of the player within a club is presented in the code below
+
+```{r}
+# Number of player per club
+ggplot(pl %>% select(club) %>% group_by(club) %>% mutate(count=n()) %>% unique(), aes(x=club, y=count, label=count))+
+  geom_col(fill = "royalblue") +
+  geom_text( hjust=1.2, color="white", size=3) +
+  coord_flip()+
+  theme_bw()+
+  labs(y = "Frequency",
+       title = "Number of Players in Clubs")
+```
+
+We see that all clubs have 33 players. Next, we will show how much the total value of each club. The total value is computed by summarizing all the market values of each player within a specific club. 
+
+```{r}
+# total value per club
+pl %>% group_by(club) %>% summarise(Total.Value = sum(value_eur, na.rm = TRUE)) %>% 
+  ggplot(aes(reorder(club, Total.Value), Total.Value, label = paste0("€", Total.Value / 1000000, "M")))+
+  geom_col(fill = "darkviolet") +
+  geom_text( hjust=1.2, color="white", size=3) +
+  coord_flip()+
+  theme_minimal()+
+  labs(x = "Clubs",
+       y= "Club Value",
+       title="Total value per club")
+```
+
+Manchester City is the club with the highest total value with more than 845 million euro and Sheffield United has the lowest total value with around 96 million euro. Next, we will show the average player age within a club.
+
+```{r}
+#average age per club
+pl %>% group_by(club) %>% summarise(Avg.Age = mean(age, na.rm = TRUE)) %>% 
+  ggplot(aes(reorder(club, -Avg.Age), Avg.Age, label = round(Avg.Age, digits=2)))+
+  geom_col(fill = "darkseagreen")+
+  geom_text( hjust=1.2, color="white", size=5) +
+  coord_flip()+
+  theme_minimal()+
+  labs(x = "Club",
+       y= "Average Age",
+       title="Average Age")
+```
+
+The club with the youngest player average age is Wolverhampton Wanderers with 23.76 years of age and the oldest is Watford with 27 years of age.
+
+```{r}
+# average overall
+pl %>% group_by(club) %>% summarise(Avg.Overall = mean(overall, na.rm = TRUE)) %>% 
+  ggplot(aes(reorder(club, Avg.Overall), Avg.Overall, label = round(Avg.Overall, digits = 2)))+
+  geom_col(fill = "forestgreen")+
+  geom_text( hjust=1.2, color="white", size=5) +
+  coord_flip()+
+  theme_minimal()+
+  labs(x = "Club",
+       y = "Average Overall",
+       title="Average overall")
+```
+
+The bar chart of the average overall skill is presented in the code above. We see that Chelsea has the largest average overall skills with 77.06, the second place is Manchester City with 77. In the average potential below, Manchester City having the highest potential with 84.3 followed by Tottenham Hotspur with 83.24. The lowest average overall skills and potential is Sheffield United with 68.88 and 73.45, respectively. 
+
+```{r}
+# average potential
+pl %>% group_by(club) %>% summarise(Avg.Potential = mean(potential, na.rm = TRUE)) %>% 
+  ggplot(aes(reorder(club, Avg.Potential), Avg.Potential, label = round(Avg.Potential, digits = 2))) +
+  geom_col(fill = "gold")+
+  geom_text( hjust=1.2, color="white", size=5) +
+  coord_flip()+
+  theme_minimal()+
+  labs(x = "Club",
+       y = "Average Potential",
+       title="Average potential")
+```
+
+## Exploratory data: Player
+Next, we will explore the player data. The correlation between the market value, age, overall skills and potential are displayed below
+
+```{r}
+# correlation between value, age, overall, potential
+ggcorrplot(cor(pl[,c(4,10:12)]) , p.mat = cor_pmat(pl[,c(4,10:12)]), hc.order=TRUE, type='lower', lab=TRUE)
+```
+
+We see that the market value is highly correlated with the overall skills. On the other hand, age seems to have a low correlation with the market value. Below we see the distribution of player market value, age, overall skills, and potential skills.
+
+```{r, warning=FALSE, message=FALSE}
+  ggplot(pl, aes(value_eur))+
+    geom_histogram( aes(y = ..density..), color="black", fill = "white") +
+    geom_density(aes(y = ..density..), alpha=0.2, fill = "coral") +
+    theme_bw() +
+    labs(title = "Distributions of player value")
+```
+
+```{r, warning=FALSE, message=FALSE}
+  ggplot(pl, aes(age)) +
+    geom_histogram( aes(y = ..density..), color="black", fill = "white") +
+    geom_density(aes(y = ..density..), alpha=0.2, fill = "darkblue") +
+    theme_bw()+
+    labs(title = "Distributions of age")
+```
+
+```{r, warning=FALSE, message=FALSE}
+ggplot(pl, aes(overall))+
+    geom_histogram( aes(y = ..density..), color="black", fill = "white") +
+    geom_density(aes(y = ..density..), alpha=0.2, fill = "darkred") +
+    theme_bw() +
+    labs(title = "Distributions of Overall")
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+  ggplot(pl, aes(potential))+
+    geom_histogram( aes(y = ..density..), color="black", fill = "white") +
+    geom_density(aes(y = ..density..), alpha=0.2, fill = "darkgreen") +
+    theme_bw() +
+    labs(title = "Distributions of Potential")
+```
+
+From the four groups defined earlier, we may see how many players within each group. The counts are presented using the bar chart as follows
+
+```{r}
+# Number of player per position
+player_per_pos <- data.frame(Position=c("Goal Keeper", "Defence", "Midfielder", "Forward"), 
+           Number_of_player = c(sum(pl$Goal_Keeper), sum(pl$Defence), sum(pl$Midfielder), sum(pl$Forward)))
+
+
+ggplot(player_per_pos, aes(reorder(Position, Number_of_player), Number_of_player, fill = Position, label = Number_of_player))+
+  geom_col(show.legend = FALSE)+
+  geom_text( hjust=1.6, color="white", size=5)+
+  coord_flip()+
+  scale_fill_ordinal()+
+  theme_minimal()+
+  labs(x = "Position",
+       title = "Number of Players")
+```
+
+Midfielder becomes the most preferred position followed by Defence. 35% of players in the premier league is a midfielder and only 10% is a goalkeeper. Now, we sort the most valuable player in the 2019/2020 season.
+
+```{r}
+# most valuable player
+pl  %>% arrange(-value_eur) %>% head(5) %>% 
+  ggplot(aes(reorder(short_name, value_eur), value_eur, label = paste0("€", value_eur / 1000000, "M")))+
+  geom_col(fill = "slategrey")+
+  geom_text( hjust=1.6, color="white", size=5)+
+  coord_flip()+
+  theme_minimal()+
+  labs(title = "Most Valuable Players",
+       x = "Players",
+       y = "Values")
+```
+
+Kevin de Bruyne is the most valuable player in this season with about 90 million euro market value followed by Harry Kane and Mohammed Salah with 83 million and 80.5 million, respectively. Now, we break down the most valuable player for each position group as follows
+
+```{r}
+# top 5 player for each position
+grid.arrange(
+  pl  %>% arrange(-value_eur) %>% filter(Goal_Keeper == 1) %>% head(5) %>% 
+    ggplot(aes(reorder(short_name, value_eur), value_eur, label = paste0("€", value_eur / 1000000, "M")))+
+    geom_col(fill = "slateblue")+
+    geom_text( hjust=1.2, color="white", size=5)+
+    coord_flip()+
+    theme_minimal()+
+    labs(subtitle = "Most Valuable Goal Keepers",
+         x = "Players",
+         y = NULL)+
+    theme(axis.text.x=element_blank()),
+  
+  pl  %>% arrange(-value_eur) %>% filter(Defence == 1) %>% head(5) %>% 
+    ggplot(aes(reorder(short_name, value_eur), value_eur, label = paste0("€", value_eur / 1000000, "M")))+
+    geom_col(fill = "violet")+
+    geom_text( hjust=1.2, color="white", size=5)+
+    coord_flip()+
+    theme_minimal()+
+    labs(subtitle = "Most Valuable Defence Players",
+         x = NULL,
+         y = NULL)+
+    theme(axis.text.x=element_blank()),
+  
+  pl  %>% arrange(-value_eur) %>% filter(Midfielder == 1) %>% head(5) %>% 
+    ggplot(aes(reorder(short_name, value_eur), value_eur, label = paste0("€", value_eur / 1000000, "M")))+
+    geom_col(fill = "salmon")+
+    geom_text( hjust=1.2, color="white", size=5)+
+    coord_flip()+
+    theme_minimal()+
+    labs(subtitle = "Most Valuable Midfielder Players",
+         x = "Players",
+         y = NULL)+
+    theme(axis.text.x=element_blank()),
+  
+  pl  %>% arrange(-value_eur) %>% filter(Forward == 1) %>% head(5) %>% 
+    ggplot(aes(reorder(short_name, value_eur), value_eur, label = paste0("€", value_eur / 1000000, "M")))+
+    geom_col(fill = "royalblue")+
+    geom_text( hjust=1.2, color="white", size=5)+
+    coord_flip()+
+    theme_minimal()+
+    labs(subtitle = "Most Valuable Forward Players",
+         x = NULL,
+         y = NULL)+
+    theme(axis.text.x=element_blank())
+)
+```
+
+Alisson Becker leads the goalkeeper most valuable player with 58 million euro, In the defense department Virgil van Dijk with 78 million euro, in the midfielder position Kevin de Bruyne and for the forward position is Harry Kane. 
+
+```{r}
+# nationality
+pl %>% select(nationality) %>% 
+  group_by(nationality) %>% 
+  mutate(count=n()) %>% unique() %>% arrange(-count) %>% head(10) %>%
+  ggplot(aes(x=reorder(nationality,-count), y = count)) +
+  geom_bar(stat="identity", fill="darkgreen") +
+  geom_text(aes(label=count), nudge_y = 10, color = "darkgreen", size = 5) +
+  labs(x="Nationality", y="Number of players") +
+  theme_bw()
+```
+
+We sort the number of players based on their nationality in the code above. We see that more than 30 players are coming from France, Spain, and the Republic of Ireland. 
+
+## Player comparison
+
+In this section, we compare and illustrate each specific skill of two players, here as an example, we choose to compare Kevin de Bruyne and Paul Pogba. For these two players, we compare the attacking skills, individual skills, movement skills, power, mentality, and defending skills. For the goalkeeping skills, we compare David De Gea and Alisson Becker. 
+
+```{r}
+pl %>% select(short_name,starts_with("attacking")) %>% filter(short_name %in% c("K. De Bruyne", "P. Pogba")) %>% 
+  melt(id="short_name") %>%
+  ggplot(aes(x=variable, y=value, group=short_name, color=short_name, fill=short_name, label=value)) +
+  geom_polygon(alpha=0.2) +
+  geom_point() +
+  geom_text(nudge_y = 0.2, size = 4) +
+  coord_polar(start=pi/2) +
+  scale_x_discrete(labels=c("attacking_volleys" = "Volleys", 
+                            "attacking_crossing" = "Crossing",
+                            "attacking_short_passing" = "Short Passing",
+                            "attacking_finishing" = "Finishing",
+                            "attacking_heading_accuracy" = "Heading")) +
+  theme(legend.position = "bottom") +
+  labs(x="", y="value", title="Attacking")
+```
+
+In the attacking skills, De Bruyne is leading in the short passing, finishing, and crossing, while Pogba leads in heading and volley.
+
+```{r}
+pl %>% select(short_name,starts_with("skill")) %>% filter(short_name %in% c("K. De Bruyne", "P. Pogba")) %>% 
+  melt(id="short_name") %>%
+  ggplot(aes(x=variable, y=value, group=short_name, color=short_name, fill=short_name, label=value)) +
+  geom_polygon(alpha=0.2) +
+  geom_point() +
+  geom_text(nudge_y = 0.2, size = 4) +
+  coord_polar(start=pi/2) +
+  scale_x_discrete(labels=c("skill_long_passing" = "Long Passing", 
+                            "skill_fk_accuracy" = "Accuracy",
+                            "skill_curve" = "Curve",
+                            "skill_dribbling" = "Dribbling",
+                            "skill_moves" = "Moves",
+                            "skill_ball_control" = "Control")) +
+  theme(legend.position = "bottom") +
+  labs(x="", y="value", title="Skills")
+```
+
+In the individual skills, both players have almost similar skills value for all skills compartments. For movement skills, De Bruyne leads on four skills, namely agility, reaction, balance and acceleration, and only fall three points behind Pogba in speed. 
+
+```{r}
+pl %>% select(short_name,starts_with("movement")) %>% filter(short_name %in% c("K. De Bruyne", "P. Pogba")) %>% 
+  melt(id="short_name") %>%
+  ggplot(aes(x=variable, y=value, group=short_name, color=short_name, fill=short_name, label=value)) +
+  geom_polygon(alpha=0.2) +
+  geom_point() +
+  geom_text(nudge_y = 0.2, size = 4) +
+  coord_polar(start=pi/2) +
+  scale_x_discrete(labels=c("movement_reactions" = "Reactions", 
+                            "movement_balance" = "Balance",
+                            "movement_agility" = "Agility",
+                            "movement_sprint_speed" = "Speed",
+                            "movement_acceleration" = "Acceleration")) +
+  theme(legend.position = "bottom") +
+  labs(x="", y="value", title="Movement")
+```
+
+In the power department, De Bruyne is again leading, but in strength and jumping, Pogba having a higher skill point.
+
+```{r}
+pl %>% select(short_name,starts_with("power")) %>% filter(short_name %in% c("K. De Bruyne", "P. Pogba")) %>% 
+  melt(id="short_name") %>%
+  ggplot(aes(x=variable, y=value, group=short_name, color=short_name, fill=short_name, label=value)) +
+  geom_polygon(alpha=0.2) +
+  geom_point() +
+  geom_text(nudge_y = 0.2, size = 4) +
+  coord_polar(start=pi/2) +
+  scale_x_discrete(labels=c("power_strength" = "Strength", 
+                            "power_long_shots" = "Long shots",
+                            "power_stamina" = "Stamina",
+                            "power_jumping" = "Jumping",
+                            "power_shot_power" = "Shot Power")) +
+  theme(legend.position = "bottom") +
+  labs(x="", y="value", title="Power")
+```
+
+
+```{r}
+pl %>% select(short_name,starts_with("mentality")) %>% filter(short_name %in% c("K. De Bruyne", "P. Pogba")) %>% 
+  melt(id="short_name") %>%
+  ggplot(aes(x=variable, y=value, group=short_name, color=short_name, fill=short_name, label=value)) +
+  geom_polygon(alpha=0.2) +
+  geom_point() +
+  geom_text(nudge_y = 0.2, size = 4) +
+  coord_polar(start=pi/2) +
+  scale_x_discrete(labels=c("mentality_penalties" = "Penalties", 
+                            "mentality_vision" = "Vision",
+                            "mentality_positioning" = "Positioning",
+                            "mentality_interceptions" = "Interceptions",
+                            "mentality_aggression" = "Aggression",
+                            "mentality_composure" = "Composure")) +
+  theme(legend.position = "bottom") +
+  labs(x="", y="value", title="Mentality")
+```
+
+For mentality, these two players share a similar number of leads. De Bruyne leads in vision, composure, and positioning, while Pogba leads in penalties, aggression, and interceptions. For the defending skills, Pogba has more skills than De Bruyne by leading in standing and sliding tackle, and defending general while De Bruyne has more points in the marking skill. 
+
+```{r}
+pl %>% select(short_name,starts_with("defending")) %>% filter(short_name %in% c("K. De Bruyne", "P. Pogba")) %>% 
+  melt(id="short_name") %>%
+  ggplot(aes(x=variable, y=value, group=short_name, color=short_name, fill=short_name, label=value)) +
+  geom_polygon(alpha=0.2) +
+  geom_point() +
+  geom_text(nudge_y = 0.2, size = 4) +
+  coord_polar(start=pi/2) +
+  scale_x_discrete(labels=c("defending_marking" = "Marking", 
+                            "defending_standing_tackle" = "Standing tackle",
+                            "defending_sliding_tackle" = "Sliding tackle")) +
+  theme(legend.position = "bottom") +
+  labs(x="", y="value", title="Defending")
+```
+
+
+
+```{r}
+pl %>% select(short_name,starts_with("goalkeeping")) %>% filter(short_name %in% c("De Gea", "Alisson")) %>%
+  melt(id="short_name") %>%
+  ggplot(aes(x=variable, y=value, group=short_name, color=short_name, fill=short_name, label=value)) +
+  geom_polygon(alpha=0.2) +
+  geom_point() +
+  geom_text(nudge_y = 0.2, size = 4) +
+  coord_polar(start=pi/2) +
+  scale_x_discrete(labels=c("goalkeeping_diving" = "Diving",
+                            "goalkeeping_handling" = "Handling",
+                            "goalkeeping_kicking" = "Kicking",
+                            "goalkeeping_positioning" = "Positioning",
+                            "goalkeeping_reflexes" = "Reflexes")) +
+  theme(legend.position = "bottom") +
+  labs(x="", y="value", title="Goalkeeping")
+
+```
+
+For comparison of goalkeeping skills, we compare De Gea and Alisson. Here, Alisson has more points on positioning handing and kicking, while De Gea leads diving and reflexes.
+
+
+## Conclusions
+This post mainly focuses on the data exploration of premier league players in the season of 2019/2020 from FIFA20 games. We summaries information on the club level as well as on the player level. We show some information, such as the most valuable club and the most valuable player, the average age, potential and overall skills of players. In the last part of the analysis, we compare two players based on their skills.
+
+Thanks for reading this article!
+
+### References
+* Dataset FIFA20: [here](https://sofifa.com) and [here](https://www.kaggle.com/stefanoleone992/fifa-20-complete-player-dataset)
+* Photo by Nathan Rogers on Unsplash
